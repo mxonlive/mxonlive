@@ -23,16 +23,16 @@ const String telegramUrl = "https://t.me/mxonlive";
 const String appName = "mxonlive";
 
 const Map<String, String> defaultHeaders = {
-  "User-Agent": "mxonlive-agent/4.0.0 (Android; Secure)",
+  "User-Agent": "mxonlive-agent/4.1.0 (Android; Secure)",
 };
 
 // --- CACHE ---
 final customCacheManager = fcm.CacheManager(
   fcm.Config(
-    'mxonlive_ultra_v4', 
+    'mxonlive_final_v41', 
     stalePeriod: const Duration(days: 3), 
     maxNrOfCacheObjects: 500, 
-    repo: fcm.JsonCacheInfoRepository(databaseName: 'mxonlive_ultra_v4'),
+    repo: fcm.JsonCacheInfoRepository(databaseName: 'mxonlive_final_v41'),
     fileService: fcm.HttpFileService(),
   ),
 );
@@ -42,10 +42,9 @@ FirebaseAnalytics analytics = FirebaseAnalytics.instance;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
   WakelockPlus.enable();
   
-  // Initialize Firebase safely
+  // Firebase Init
   try {
     await Firebase.initializeApp();
   } catch (e) {
@@ -164,8 +163,6 @@ class _SplashScreenState extends State<SplashScreen> {
             ),
             const SizedBox(height: 30),
             const SpinKitThreeBounce(color: Colors.redAccent, size: 25),
-            const SizedBox(height: 10),
-            const Text("v4.0.0", style: TextStyle(color: Colors.grey, fontSize: 10)),
           ],
         ),
       ),
@@ -193,7 +190,7 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     fetchConfig();
-    analytics.logEvent(name: 'app_home_loaded');
+    analytics.logEvent(name: 'app_home_view');
   }
 
   void _showMsg(String msg, {bool isError = false}) {
@@ -205,7 +202,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> fetchConfig() async {
     setState(() { isConfigLoading = true; });
     try { await _fetchFromUrl(primaryConfigUrl); } catch (e) {
-      try { await _fetchFromUrl(backupConfigUrl); _showMsg("Connected via Backup"); } catch (e2) { setState(() { isConfigLoading = false; }); _showMsg("Connection Failed", isError: true); }
+      try { await _fetchFromUrl(backupConfigUrl); _showMsg("Backup Connected"); } catch (e2) { setState(() { isConfigLoading = false; }); _showMsg("Network Error", isError: true); }
     }
   }
 
