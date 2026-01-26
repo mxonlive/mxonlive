@@ -1,3 +1,9 @@
+plugins {
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+    id "com.google.gms.google-services"
+}
+
 def localProperties = new Properties()
 def localPropertiesFile = rootProject.file('local.properties')
 if (localPropertiesFile.exists()) {
@@ -21,14 +27,7 @@ if (flutterVersionName == null) {
     flutterVersionName = '1.0'
 }
 
-plugins {
-    id "com.android.application"
-    id "kotlin-android" // Standard Kotlin Plugin
-    id "com.google.gms.google-services"
-}
-
-// 🔥 THIS LINE FIXES "Unresolved Reference" 🔥
-// It forces the Flutter engine to be linked properly.
+// 🔥 Flutter Loader Script
 apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 
 android {
