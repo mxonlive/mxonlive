@@ -29,13 +29,12 @@ android {
     ndkVersion flutter.ndkVersion
 
     compileOptions {
-        // 🔥 Java 17 Required for New Gradle 🔥
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
 
     kotlinOptions {
-        jvmTarget = '17'
+        jvmTarget = '1.8'
     }
 
     sourceSets {
@@ -44,7 +43,7 @@ android {
 
     defaultConfig {
         applicationId "com.mxonlive.tv.mxonlive"
-        minSdkVersion 21
+        minSdkVersion 23 // Updated for better compatibility
         targetSdkVersion flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
