@@ -29,13 +29,12 @@ android {
     ndkVersion flutter.ndkVersion
 
     compileOptions {
-        // 🔥 Java 17 Required for AGP 8.6.0 🔥
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
 
     kotlinOptions {
-        jvmTarget = '17'
+        jvmTarget = '1.8'
     }
 
     sourceSets {
@@ -44,8 +43,7 @@ android {
 
     defaultConfig {
         applicationId "com.mxonlive.tv.mxonlive"
-        // Updated Min SDK for better compatibility
-        minSdkVersion 23
+        minSdkVersion 21
         targetSdkVersion flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
@@ -54,6 +52,8 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.debug
+            minifyEnabled false 
+            shrinkResources false
         }
     }
 }
