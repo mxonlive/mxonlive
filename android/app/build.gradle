@@ -1,7 +1,6 @@
 plugins {
     id "com.android.application"
     id "org.jetbrains.kotlin.android"
-    // 🔥 The New Required Plugin 🔥
     id "dev.flutter.flutter-gradle-plugin"
     id "com.google.gms.google-services"
 }
@@ -30,12 +29,13 @@ android {
     ndkVersion flutter.ndkVersion
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        // 🔥 Java 17 Required for AGP 8.6.0 🔥
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = '1.8'
+        jvmTarget = '17'
     }
 
     sourceSets {
@@ -44,7 +44,8 @@ android {
 
     defaultConfig {
         applicationId "com.mxonlive.tv.mxonlive"
-        minSdkVersion 21
+        // Updated Min SDK for better compatibility
+        minSdkVersion 23
         targetSdkVersion flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
@@ -52,10 +53,7 @@ android {
 
     buildTypes {
         release {
-            // Signing Config for Release
             signingConfig signingConfigs.debug
-            minifyEnabled false
-            shrinkResources false
         }
     }
 }
