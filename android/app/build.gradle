@@ -1,6 +1,8 @@
 plugins {
     id "com.android.application"
     id "org.jetbrains.kotlin.android"
+    // 🔥 The New Required Plugin 🔥
+    id "dev.flutter.flutter-gradle-plugin"
     id "com.google.gms.google-services"
 }
 
@@ -12,11 +14,6 @@ if (localPropertiesFile.exists()) {
     }
 }
 
-def flutterRoot = localProperties.getProperty('flutter.sdk')
-if (flutterRoot == null) {
-    throw new GradleException("Flutter SDK not found. Define location with flutter.sdk in the local.properties file.")
-}
-
 def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
 if (flutterVersionCode == null) {
     flutterVersionCode = '1'
@@ -26,9 +23,6 @@ def flutterVersionName = localProperties.getProperty('flutter.versionName')
 if (flutterVersionName == null) {
     flutterVersionName = '1.0'
 }
-
-// 🔥 Flutter Loader Script
-apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 
 android {
     namespace "com.mxonlive.tv.mxonlive"
@@ -50,7 +44,7 @@ android {
 
     defaultConfig {
         applicationId "com.mxonlive.tv.mxonlive"
-        minSdkVersion 23
+        minSdkVersion 21
         targetSdkVersion flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
@@ -58,7 +52,10 @@ android {
 
     buildTypes {
         release {
+            // Signing Config for Release
             signingConfig signingConfigs.debug
+            minifyEnabled false
+            shrinkResources false
         }
     }
 }
@@ -68,7 +65,6 @@ flutter {
 }
 
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
     implementation platform('com.google.firebase:firebase-bom:32.7.0')
     implementation 'com.google.firebase:firebase-analytics'
 }
