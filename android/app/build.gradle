@@ -43,7 +43,7 @@ android {
 
     defaultConfig {
         applicationId "com.mxonlive.tv.mxonlive"
-        minSdkVersion 21
+        minSdkVersion 23
         targetSdkVersion flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
@@ -52,8 +52,6 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.debug
-            minifyEnabled false 
-            shrinkResources false
         }
     }
 }
