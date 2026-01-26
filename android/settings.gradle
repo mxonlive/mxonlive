@@ -17,10 +17,9 @@ pluginManagement {
 }
 
 plugins {
-    id "dev.flutter.flutter-gradle-plugin" version "1.0.0" apply false
-    // 🔥 Updated to fix warnings
-    id "com.android.application" version "8.6.0" apply false
-    id "org.jetbrains.kotlin.android" version "2.0.20" apply false
+    // 🔥 Kotlin Updated to 2.1.0 (Fixes Warning) 🔥
+    id "com.android.application" version "8.2.1" apply false
+    id "org.jetbrains.kotlin.android" version "2.1.0" apply false
     id "com.google.gms.google-services" version "4.4.0" apply false
 }
 
