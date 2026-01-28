@@ -1,7 +1,7 @@
 name: mxonlive
 description: Premium Live TV Player.
 publish_to: 'none'
-version: 4.8.0+1
+version: 4.8.2+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -35,12 +35,12 @@ dev_dependencies:
   flutter_lints: ^3.0.0
   flutter_launcher_icons: ^0.13.1
 
-# Icon Config
-flutter_icons:
+# 🔥 FIX: Updated Key from 'flutter_icons' to 'flutter_launcher_icons'
+flutter_launcher_icons:
   android: "ic_launcher"
   ios: true
   image_path: "assets/logo.png"
-  min_sdk_android: 23 # Updated SDK
+  min_sdk_android: 23
 
 flutter:
   uses-material-design: true
