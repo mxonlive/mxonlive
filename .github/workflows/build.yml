@@ -1,10 +1,10 @@
-name: Build mxonlive v4.6.0
+name: Auto-Build mxonlive v4.8.0
 
 on: [push, workflow_dispatch]
 
 jobs:
   build-android:
-    name: Build APKs
+    name: Auto-Generate & Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -16,28 +16,62 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Initialize
-        run: flutter create . --org com.mxonlive.tv --project-name mxonlive
-
-      # 🔥 NUCLEAR OPTION: Force Delete Problematic File 🔥
-      - name: Force Remove MainActivity
+      # ---------------------------------------------------------
+      # 🔥 STEP 1: BACKUP & REGENERATE ANDROID PROJECT 🔥
+      # ---------------------------------------------------------
+      - name: Regenerate Android Folder
         run: |
-          echo "Removing conflicting MainActivity.kt..."
-          rm -rf android/app/src/main/kotlin/com/mxonlive/tv/mxonlive/MainActivity.kt
-          echo "File removed successfully."
-
-      # Fix Min SDK & Config
-      - name: Fix Android Config
-        run: |
-          if [ -f android/app/build.gradle.kts ]; then
-            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/g' android/app/build.gradle.kts
-          fi
-          if [ -f android/app/build.gradle ]; then
-            sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/g' android/app/build.gradle
+          echo "Starting Auto-Generation Process..."
+          
+          # ১. Google Services ফাইলটি নিরাপদে সরিয়ে রাখা হচ্ছে
+          if [ -f android/app/google-services.json ]; then
+            mv android/app/google-services.json google-services.json
+            echo "Backup google-services.json: DONE"
+          else
+            echo "Warning: google-services.json not found!"
           fi
 
+          # ২. সমস্যাযুক্ত পুরনো android ফোল্ডার মুছে ফেলা হচ্ছে
+          rm -rf android
+          echo "Deleted old Android folder: DONE"
+
+          # ৩. Flutter দিয়ে নতুন ফ্রেশ Android প্রোজেক্ট তৈরি করা হচ্ছে
+          flutter create . --org com.mxonlive.tv --project-name mxonlive --platforms android
+          echo "Generated fresh Android project: DONE"
+
+          # ৪. Google Services ফাইলটি আবার সঠিক জায়গায় ফেরত আনা হচ্ছে
+          if [ -f google-services.json ]; then
+            mv google-services.json android/app/
+            echo "Restored google-services.json: DONE"
+          fi
+
+      # ---------------------------------------------------------
+      # 🔥 STEP 2: INJECT CONFIGURATIONS (Script Magic) 🔥
+      # ---------------------------------------------------------
+      - name: Inject Permissions & Configs
+        run: |
+          # ১. Permissions যুক্ত করা (Internet & Wakelock)
+          sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.WAKE_LOCK"\/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>\n    <application/g' android/app/src/main/AndroidManifest.xml
+          
+          # ২. MinSDK সেট করা (23)
+          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/g' android/app/build.gradle
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/g' android/app/build.gradle
+
+          # ৩. Firebase Classpath যুক্ত করা (Project Level)
+          sed -i 's/dependencies {/dependencies {\n        classpath "com.google.gms:google-services:4.4.0"/g' android/build.gradle
+
+          # ৪. Firebase Plugins এবং Dependencies যুক্ত করা (App Level)
+          sed -i 's/apply plugin: "com.android.application"/apply plugin: "com.android.application"\n    id "com.google.gms.google-services"/g' android/app/build.gradle
+          sed -i 's/dependencies {/dependencies {\n    implementation platform("com.google.firebase:firebase-bom:32.7.0")\n    implementation "com.google.firebase:firebase-analytics"/g' android/app/build.gradle
+
+          echo "All configurations injected successfully."
+
+      # ---------------------------------------------------------
+      # 🔥 STEP 3: BUILD 🔥
+      # ---------------------------------------------------------
       - name: Generate Icons
         run: |
+          # লোগো না থাকলে ডাউনলোড করবে, থাকলে সেটিই ব্যবহার করবে
           if [ ! -f assets/logo.png ]; then mkdir -p assets; curl -L -o assets/logo.png "https://cdn-icons-png.flaticon.com/512/3163/3163478.png"; fi
           flutter pub get
           dart run flutter_launcher_icons
@@ -45,21 +79,20 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Build Universal
+      - name: Build Universal APK
         run: flutter build apk --release
 
-      - name: Build Splits
+      - name: Build Split APKs
         run: flutter build apk --release --split-per-abi
 
-      - name: Bundle
+      - name: Bundle Results
         run: |
           mkdir -p release_apks
-          cp build/app/outputs/flutter-apk/app-release.apk release_apks/mxonlive-v4.6.0-Universal.apk
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk release_apks/mxonlive-v4.6.0-Arm64.apk
-          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk release_apks/mxonlive-v4.6.0-Arm32.apk
-          cd release_apks && zip -r mxonlive-v4.6.0-bundle.zip .
+          cp build/app/outputs/flutter-apk/app-release.apk release_apks/mxonlive-v4.8.0-Universal.apk
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk release_apks/mxonlive-v4.8.0-Arm64.apk
+          cd release_apks && zip -r mxonlive-v4.8.0-bundle.zip .
 
       - uses: actions/upload-artifact@v4
         with:
-          name: mxonlive-v4.6.0-bundle
-          path: release_apks/mxonlive-v4.6.0-bundle.zip
+          name: mxonlive-v4.8.0-bundle
+          path: release_apks/mxonlive-v4.8.0-bundle.zip
