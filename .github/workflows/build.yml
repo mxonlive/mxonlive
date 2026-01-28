@@ -1,4 +1,4 @@
-name: Auto-Build mxonlive v4.8.1
+name: Auto-Build mxonlive v4.8.2
 
 on: [push, workflow_dispatch]
 
@@ -17,61 +17,56 @@ jobs:
           channel: 'stable'
 
       # ---------------------------------------------------------
-      # 🔥 STEP 1: BACKUP & REGENERATE ANDROID PROJECT 🔥
+      # 🔥 STEP 1: BACKUP & REGENERATE PROJECT 🔥
       # ---------------------------------------------------------
-      - name: Regenerate Android Folder
+      - name: Regenerate Project Folders
         run: |
           echo "Starting Auto-Generation Process..."
           
-          # ১. Google Services ফাইলটি ব্যাকআপ রাখা
+          # ১. Google Services ব্যাকআপ
           if [ -f android/app/google-services.json ]; then
             mv android/app/google-services.json google-services.json
             echo "Backup google-services.json: DONE"
-          else
-            echo "Warning: google-services.json not found in android/app/"
           fi
 
-          # ২. পুরনো android ফোল্ডার মুছে ফেলা
-          rm -rf android
-          echo "Deleted old Android folder: DONE"
+          # ২. পুরনো android এবং ios ফোল্ডার মুছে ফেলা (ক্লিন স্লেট)
+          rm -rf android ios
+          echo "Deleted old Android/iOS folders: DONE"
 
-          # ৩. নতুন ফ্রেশ Android প্রোজেক্ট তৈরি করা (Kotlin DSL)
-          flutter create . --org com.mxonlive.tv --project-name mxonlive --platforms android
-          echo "Generated fresh Android project: DONE"
+          # ৩. নতুন প্রোজেক্ট তৈরি (Removed --platforms android constraint)
+          # এটি Android এবং iOS দুটোই তৈরি করবে যাতে আইকন জেনারেটর ফেইল না করে
+          flutter create . --org com.mxonlive.tv --project-name mxonlive
+          echo "Generated fresh project structure: DONE"
 
-          # ৪. Google Services ফাইল রিস্টোর করা
+          # ৪. Google Services রিস্টোর
           if [ -f google-services.json ]; then
             mv google-services.json android/app/
             echo "Restored google-services.json: DONE"
           fi
 
       # ---------------------------------------------------------
-      # 🔥 STEP 2: INJECT CONFIGURATIONS (Kotlin DSL Fix) 🔥
+      # 🔥 STEP 2: INJECT CONFIGURATIONS (Kotlin DSL) 🔥
       # ---------------------------------------------------------
       - name: Inject Permissions & Configs
         run: |
-          echo "Injecting configurations into Kotlin DSL files..."
+          echo "Injecting configurations..."
 
-          # ১. Permissions (AndroidManifest.xml - Same for all)
+          # Permissions
           sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.WAKE_LOCK"\/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>\n    <application/g' android/app/src/main/AndroidManifest.xml
           
-          # ২. MinSDK সেট করা (23) - Targeting build.gradle.kts
-          # Kotlin DSL এ এটি 'minSdk = ...' থাকে
+          # MinSDK Fix
           sed -i 's/flutter.minSdkVersion/23/g' android/app/build.gradle.kts
 
-          # ৩. Google Services Plugin ভার্সন যুক্ত করা (settings.gradle.kts)
-          # plugins ব্লকের শুরুতে লাইনটি ঢুকিয়ে দেওয়া হচ্ছে
+          # Google Services Plugin (Project Level)
           sed -i 's/plugins {/plugins {\n    id("com.google.gms.google-services") version "4.4.0" apply false/g' android/settings.gradle.kts
 
-          # ৪. App Level Plugins যুক্ত করা (app/build.gradle.kts)
-          # android application প্লাগিন এর নিচে google services প্লাগিন দেওয়া হচ্ছে
+          # Google Services Plugin (App Level)
           sed -i 's/id("com.android.application")/id("com.android.application")\n    id("com.google.gms.google-services")/g' android/app/build.gradle.kts
 
-          # ৫. Firebase Dependencies যুক্ত করা (app/build.gradle.kts)
-          # dependencies ব্লকের শুরুতে লাইব্রেরিগুলো দেওয়া হচ্ছে
+          # Firebase Dependencies
           sed -i 's/dependencies {/dependencies {\n    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))\n    implementation("com.google.firebase:firebase-analytics")/g' android/app/build.gradle.kts
 
-          echo "All Kotlin DSL configurations injected successfully."
+          echo "Injection Complete."
 
       # ---------------------------------------------------------
       # 🔥 STEP 3: BUILD 🔥
@@ -94,11 +89,11 @@ jobs:
       - name: Bundle Results
         run: |
           mkdir -p release_apks
-          cp build/app/outputs/flutter-apk/app-release.apk release_apks/mxonlive-v4.8.1-Universal.apk
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk release_apks/mxonlive-v4.8.1-Arm64.apk
-          cd release_apks && zip -r mxonlive-v4.8.1-bundle.zip .
+          cp build/app/outputs/flutter-apk/app-release.apk release_apks/mxonlive-v4.8.2-Universal.apk
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk release_apks/mxonlive-v4.8.2-Arm64.apk
+          cd release_apks && zip -r mxonlive-v4.8.2-bundle.zip .
 
       - uses: actions/upload-artifact@v4
         with:
-          name: mxonlive-v4.8.1-bundle
-          path: release_apks/mxonlive-v4.8.1-bundle.zip
+          name: mxonlive-v4.8.2-bundle
+          path: release_apks/mxonlive-v4.8.2-bundle.zip
