@@ -1,48 +1,71 @@
-name: Auto-Build mxonlive v6.0
+name: Full Reset Build - mxonlive v6.0
 
-on: [push, workflow_dispatch]
+on:
+  push:
+  workflow_dispatch:
 
 jobs:
-  build-android:
-    name: Clean & Build
+  android-build:
+    name: Full Clean & Rebuild
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-java@v3
+      # 📥 CHECKOUT
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      # ☕ JAVA
+      - name: Setup Java 17
+        uses: actions/setup-java@v3
         with:
-          distribution: 'zulu'
+          distribution: zulu
           java-version: '17'
-      - uses: subosito/flutter-action@v2
+
+      # 🐦 FLUTTER
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
+          channel: stable
 
-      # 🔥 STEP 1: FRESH START 🔥
-      - name: Generate New Project
+      # 🔥 FULL RESET (NO SURVIVORS)
+      - name: HARD RESET PROJECT
         run: |
-          echo "Wiping old files..."
-          rm -rf android ios build
-          echo "Generating mxonlive..."
-          flutter create . --org com.mxonlive.tv --project-name mxonlive
+          echo "🔥 FULL PROJECT WIPE"
+          rm -rf \
+            android \
+            ios \
+            build \
+            .dart_tool \
+            .flutter-plugins \
+            .flutter-plugins-dependencies
+          flutter clean
 
-      # 🔥 STEP 2: PERMISSIONS & CLEARTEXT (Crucial for HTTP streams) 🔥
-      - name: Inject Config
+      # 🆕 REGENERATE PROJECT
+      - name: Recreate Flutter Project
         run: |
-          # Inject Permissions + usesCleartextTraffic="true"
-          sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.WAKE_LOCK"\/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>\n    <application android:usesCleartextTraffic="true"/g' android/app/src/main/AndroidManifest.xml
-          
-          # Fix MinSDK
+          flutter create . \
+            --org com.mxonlive.tv \
+            --project-name mxonlive
+
+      # 🔧 ANDROID FIXES
+      - name: Inject Android Config
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+
+          sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.WAKE_LOCK"\/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>\n    <application android:usesCleartextTraffic="true"/' $MANIFEST
+
           sed -i 's/flutter.minSdkVersion/21/g' android/app/build.gradle.kts
 
-      # 🔥 STEP 3: BUILD 🔥
+      # 📦 BUILD
       - name: Build APKs
         run: |
-          if [ ! -f assets/logo.png ]; then mkdir -p assets; curl -L -o assets/logo.png "https://cdn-icons-png.flaticon.com/512/3163/3163478.png"; fi
           flutter pub get
-          dart run flutter_launcher_icons
           flutter build apk --release
           flutter build apk --release --split-per-abi
 
-      - uses: actions/upload-artifact@v4
+      # 📤 UPLOAD
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: mxonlive-v6.0-bundle
+          name: mxonlive-v6.0-full-reset
           path: build/app/outputs/flutter-apk/*.apk
