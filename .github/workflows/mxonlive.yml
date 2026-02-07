@@ -1,45 +1,25 @@
-name: Build mxonlive
+name: mxonlive CI/CD
 
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+on: [push]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Flutter
+      - uses: actions/checkout@v4
+      - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.x'  # Stable channel
           channel: 'stable'
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Create platform files
-        run: flutter create .
-
-      - name: Build APK
-        run: flutter build apk --release
-
-      - name: Build Web
-        run: flutter build web
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+      - run: flutter pub get
+      - run: flutter create .
+      - run: flutter build apk --release
+      - run: flutter build web
+      - uses: actions/upload-artifact@v4
         with:
-          name: mxonlive-apk
+          name: apk
           path: build/app/outputs/flutter-apk/app-release.apk
-
-      - name: Upload Web artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: mxonlive-web
+          name: web
           path: build/web
