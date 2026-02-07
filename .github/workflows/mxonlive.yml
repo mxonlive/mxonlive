@@ -1,20 +1,30 @@
-name: mxonlive CI/CD
+name: Build mxonlive
 
-on: [push]
+on:
+  - push
+  - workflow_dispatch
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Flutter
-        uses: subosito/flutter-action@v2
+      - uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+      - run: flutter --version
       - run: flutter pub get
+      - run: flutter pub run flutter_launcher_icons
       - run: flutter create .
+      - run: sed -i 's/<application /<application android:usesCleartextTraffic="true" /' android/app/src/main/AndroidManifest.xml
+      - run: sed -i '/<category android:name="android.intent.category.LAUNCHER" \/>/a\        <category android:name="android.intent.category.LEANBACK_LAUNCHER" \/>' android/app/src/main/AndroidManifest.xml
       - run: flutter build apk --release
       - run: flutter build web
+      - run: flutter build linux --release  # Optional desktop
       - uses: actions/upload-artifact@v4
         with:
           name: apk
@@ -23,3 +33,7 @@ jobs:
         with:
           name: web
           path: build/web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: build/linux/x64/release/bundle
