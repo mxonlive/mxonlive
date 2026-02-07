@@ -1,0 +1,52 @@
+name: Auto-Build mxonlive v5.0
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build-android:
+    name: Clean & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      # 🔥 STEP 1: PURGE OLD DATA & REGENERATE 🔥
+      - name: Fresh Project Generation
+        run: |
+          echo "Deleting old Android/iOS folders..."
+          rm -rf android ios build
+          echo "Creating new mxonlive project..."
+          flutter create . --org com.mxonlive.tv --project-name mxonlive
+
+      # 🔥 STEP 2: INJECT PERMISSIONS & TRAFFIC RULES 🔥
+      - name: Configure Manifest & Gradle
+        run: |
+          echo "Injecting Internet & Cleartext Traffic permissions..."
+          
+          # AndroidManifest.xml: Add Permissions + usesCleartextTraffic
+          sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.WAKE_LOCK"\/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>\n    <application android:usesCleartextTraffic="true"/g' android/app/src/main/AndroidManifest.xml
+          
+          # build.gradle.kts: Set MinSDK to 21
+          sed -i 's/flutter.minSdkVersion/21/g' android/app/build.gradle.kts
+
+          echo "Configuration Complete."
+
+      # 🔥 STEP 3: BUILD APK 🔥
+      - name: Generate Icons & Build
+        run: |
+          if [ ! -f assets/logo.png ]; then mkdir -p assets; curl -L -o assets/logo.png "https://cdn-icons-png.flaticon.com/512/3163/3163478.png"; fi
+          flutter pub get
+          dart run flutter_launcher_icons
+          flutter build apk --release
+          flutter build apk --release --split-per-abi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mxonlive-v5.0-bundle
+          path: build/app/outputs/flutter-apk/*.apk
