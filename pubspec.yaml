@@ -1,7 +1,7 @@
 name: mxonlive
-description: Premium Live TV Player.
+description: The Unstoppable IPTV Player.
 publish_to: 'none'
-version: 4.8.2+1
+version: 5.0.0+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -9,7 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # Core
+  # Network
   http: ^1.1.0
   cached_network_image: ^3.3.0
   flutter_cache_manager: ^3.3.1
@@ -21,13 +21,9 @@ dependencies:
   marquee: ^2.2.3
   flutter_spinkit: ^5.2.0
   
-  # Player & System
+  # Player (Powerful & Stable)
   pod_player: ^0.2.2
   wakelock_plus: ^1.1.4
-  
-  # Analytics
-  firebase_core: ^2.24.2
-  firebase_analytics: ^10.8.0
 
 dev_dependencies:
   flutter_test:
@@ -35,12 +31,12 @@ dev_dependencies:
   flutter_lints: ^3.0.0
   flutter_launcher_icons: ^0.13.1
 
-# 🔥 FIX: Updated Key from 'flutter_icons' to 'flutter_launcher_icons'
+# Icon Configuration
 flutter_launcher_icons:
   android: "ic_launcher"
   ios: true
   image_path: "assets/logo.png"
-  min_sdk_android: 23
+  min_sdk_android: 21
 
 flutter:
   uses-material-design: true
