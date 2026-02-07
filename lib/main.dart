@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
@@ -16,9 +15,6 @@ import 'package:video_player/video_player.dart';
 const String appName = 'mxonlive';
 const String configUrl = 'https://mxonlive.github.io/live/mxonlive_config.json';
 const String defaultM3uUrl = 'https://private-zone-by-xfireflix.pages.dev/playlist-isp-bdix.m3u';
-
-const String cacheConfigKey = 'mxonlive_config_cache';
-const String cachePlaylistKey = 'mxonlive_playlist_cache';
 
 const Duration requestTimeout = Duration(seconds: 20);
 
@@ -80,28 +76,6 @@ class ServerConfig {
       notificationEnabled: json['features']?['notification_enabled'] as bool? ?? true,
     );
   }
-
-  Map<String, dynamic> toJson() => {
-        'app': {
-          'name': name,
-          'version': version,
-          'welcome_message': welcomeMessage,
-          'notification': notification,
-          'm3u_url': m3uUrl,
-        },
-        'updates': {'title': updateTitle, 'description': updateDescription},
-        'downloads': {'apk': apkDownload, 'web': webDownload},
-        'legal': {'disclaimer': disclaimer},
-        'contact': {
-          'telegram_user': telegramUser,
-          'telegram_group': telegramGroup,
-          'website': website,
-        },
-        'features': {
-          'welcome_enabled': welcomeEnabled,
-          'notification_enabled': notificationEnabled,
-        },
-      };
 }
 
 class Channel {
@@ -119,88 +93,29 @@ class Channel {
 }
 
 // ──────────────────────────────────────────────
-//  CACHE HELPER
-// ──────────────────────────────────────────────
-
-class CacheHelper {
-  static Future<void> saveConfig(ServerConfig config) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(cacheConfigKey, jsonEncode(config.toJson()));
-  }
-
-  static Future<ServerConfig?> getCachedConfig() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(cacheConfigKey);
-    if (raw == null) return null;
-    try {
-      return ServerConfig.fromJson(jsonDecode(raw));
-    } catch (_) {
-      return null;
-    }
-  }
-
-  static Future<void> savePlaylist(String content) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(cachePlaylistKey, content);
-  }
-
-  static Future<String?> getCachedPlaylist() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(cachePlaylistKey);
-  }
-
-  static Future<bool> hasAnyCache() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.containsKey(cacheConfigKey) || prefs.containsKey(cachePlaylistKey);
-  }
-}
-
-// ──────────────────────────────────────────────
 //  SERVICES
 // ──────────────────────────────────────────────
 
 class ConfigService {
   static Future<ServerConfig> load() async {
-    try {
-      final response = await http.get(Uri.parse(configUrl)).timeout(requestTimeout);
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body) as Map<String, dynamic>;
-        final config = ServerConfig.fromJson(json);
-        await CacheHelper.saveConfig(config);
-        return config;
-      } else {
-        throw Exception('Server error: ${response.statusCode}');
-      }
-    } catch (e) {
-      final cached = await CacheHelper.getCachedConfig();
-      if (cached != null) {
-        return cached;
-      }
-      throw Exception('No internet & no cache');
+    final response = await http.get(Uri.parse(configUrl)).timeout(requestTimeout);
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      return ServerConfig.fromJson(json);
+    } else {
+      throw Exception('Config load failed - Status: ${response.statusCode}');
     }
   }
 }
 
 class PlaylistService {
   static Future<List<Channel>> loadAndParse(String playlistUrl) async {
-    String content = '';
-
-    try {
-      final res = await http.get(Uri.parse(playlistUrl)).timeout(requestTimeout);
-      if (res.statusCode == 200) {
-        content = res.body;
-        await CacheHelper.savePlaylist(content);
-      }
-    } catch (_) {
-      // fallback to cache
-      content = (await CacheHelper.getCachedPlaylist()) ?? '';
+    final res = await http.get(Uri.parse(playlistUrl)).timeout(requestTimeout);
+    if (res.statusCode == 200) {
+      return _parseM3u(res.body);
+    } else {
+      throw Exception('Playlist load failed - Status: ${res.statusCode}');
     }
-
-    if (content.trim().isEmpty) {
-      return [];
-    }
-
-    return _parseM3u(content);
   }
 
   static List<Channel> _parseM3u(String text) {
@@ -274,7 +189,6 @@ class _HomePageState extends State<HomePage> {
   List<Channel> filteredChannels = [];
   bool isLoading = true;
   String? errorMessage;
-  bool isOfflineMode = false;
 
   final searchController = TextEditingController();
 
@@ -282,14 +196,13 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     searchController.addListener(_onSearch);
-    _loadAllData();
+    _loadData();
   }
 
-  Future<void> _loadAllData() async {
+  Future<void> _loadData() async {
     setState(() {
       isLoading = true;
       errorMessage = null;
-      isOfflineMode = false;
     });
 
     try {
@@ -305,33 +218,17 @@ class _HomePageState extends State<HomePage> {
     } catch (e) {
       setState(() {
         isLoading = false;
-        errorMessage = e.toString();
-        isOfflineMode = await CacheHelper.hasAnyCache();
+        errorMessage = e.toString().replaceFirst('Exception: ', '');
       });
-
-      // Try to show cached data even if error
-      if (isOfflineMode) {
-        final cachedConfig = await CacheHelper.getCachedConfig();
-        final cachedPlaylist = await CacheHelper.getCachedPlaylist();
-
-        if (cachedConfig != null && cachedPlaylist != null && cachedPlaylist.isNotEmpty) {
-          setState(() {
-            config = cachedConfig;
-            channels = PlaylistService._parseM3u(cachedPlaylist);
-            filteredChannels = channels;
-            errorMessage = 'Offline mode - using saved data';
-          });
-        }
-      }
     }
   }
 
   void _onSearch() {
-    final query = searchController.text.trim().toLowerCase();
+    final q = searchController.text.trim().toLowerCase();
     setState(() {
       filteredChannels = channels.where((c) {
-        return c.name.toLowerCase().contains(query) ||
-            c.groupTitle.toLowerCase().contains(query);
+        return c.name.toLowerCase().contains(q) ||
+            c.groupTitle.toLowerCase().contains(q);
       }).toList();
     });
   }
@@ -351,20 +248,22 @@ class _HomePageState extends State<HomePage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.info_outline),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => InfoPage(config: config)),
-            ),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => InfoPage(config: config)),
+              );
+            },
           ),
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _loadAllData,
+        onRefresh: _loadData,
         child: isLoading
             ? _buildShimmer()
             : errorMessage != null
-                ? _buildErrorView()
-                : _buildMainContent(),
+                ? _buildError()
+                : _buildContent(),
       ),
     );
   }
@@ -392,34 +291,27 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildErrorView() {
+  Widget _buildError() {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              isOfflineMode ? Icons.cloud_off : Icons.error_outline,
-              size: 80,
-              color: isOfflineMode ? Colors.orange : Colors.redAccent,
-            ),
+            const Icon(Icons.error_outline, size: 80, color: Colors.redAccent),
             const SizedBox(height: 24),
-            Text(
-              isOfflineMode ? 'Offline Mode' : 'Connection Problem',
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
+            const Text('কিছু একটা সমস্যা হয়েছে', style: TextStyle(fontSize: 22)),
             const SizedBox(height: 16),
             Text(
-              errorMessage ?? 'Unknown error',
+              errorMessage ?? 'ইন্টারনেট চেক করুন বা পরে আবার চেষ্টা করুন',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey[400]),
+              style: const TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 32),
             ElevatedButton.icon(
               icon: const Icon(Icons.refresh),
-              label: const Text('Try Again'),
-              onPressed: _loadAllData,
+              label: const Text('আবার চেষ্টা করুন'),
+              onPressed: _loadData,
             ),
           ],
         ),
@@ -427,7 +319,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildMainContent() {
+  Widget _buildContent() {
     return CustomScrollView(
       slivers: [
         if (config?.welcomeEnabled == true)
@@ -435,7 +327,7 @@ class _HomePageState extends State<HomePage> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Text(
-                config?.welcomeMessage ?? '',
+                config?.welcomeMessage ?? 'Welcome to mxonlive',
                 style: const TextStyle(fontSize: 18),
                 textAlign: TextAlign.center,
               ),
@@ -465,7 +357,7 @@ class _HomePageState extends State<HomePage> {
             child: TextField(
               controller: searchController,
               decoration: InputDecoration(
-                hintText: 'Search channels...',
+                hintText: 'চ্যানেল খুঁজুন...',
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 filled: true,
@@ -478,7 +370,7 @@ class _HomePageState extends State<HomePage> {
         if (filteredChannels.isEmpty)
           const SliverFillRemaining(
             hasScrollBody: false,
-            child: Center(child: Text('No channels found', style: TextStyle(fontSize: 18))),
+            child: Center(child: Text('কোনো চ্যানেল পাওয়া যায়নি', style: TextStyle(fontSize: 18))),
           )
         else
           SliverPadding(
@@ -542,7 +434,6 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-// Player Page
 class PlayerPage extends StatefulWidget {
   final Channel initialChannel;
   final List<Channel> groupChannels;
@@ -558,100 +449,91 @@ class PlayerPage extends StatefulWidget {
 }
 
 class _PlayerPageState extends State<PlayerPage> {
-  late VideoPlayerController _videoController;
-  ChewieController? _chewieController;
-  late Channel _currentChannel;
-  bool _isBuffering = true;
-  String? _playerError;
+  late VideoPlayerController videoController;
+  ChewieController? chewieController;
+  late Channel currentChannel;
+  bool isBuffering = true;
+  String? playerError;
 
   @override
   void initState() {
     super.initState();
-    _currentChannel = widget.initialChannel;
-    _initializePlayer();
+    currentChannel = widget.initialChannel;
+    _initPlayer();
   }
 
-  Future<void> _initializePlayer() async {
+  Future<void> _initPlayer() async {
     setState(() {
-      _isBuffering = true;
-      _playerError = null;
+      isBuffering = true;
+      playerError = null;
     });
 
     try {
-      _videoController = VideoPlayerController.networkUrl(Uri.parse(_currentChannel.url));
-      await _videoController.initialize();
+      videoController = VideoPlayerController.networkUrl(Uri.parse(currentChannel.url));
+      await videoController.initialize();
 
-      _chewieController = ChewieController(
-        videoPlayerController: _videoController,
+      chewieController = ChewieController(
+        videoPlayerController: videoController,
         autoPlay: true,
         looping: false,
         allowFullScreen: true,
         allowMuting: true,
-        errorBuilder: (context, errorMessage) {
-          return Center(
-            child: Text(
-              'Cannot play stream\n$errorMessage',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white),
-            ),
-          );
-        },
       );
 
-      setState(() => _isBuffering = false);
+      setState(() => isBuffering = false);
     } catch (e) {
       setState(() {
-        _playerError = e.toString();
-        _isBuffering = false;
+        playerError = e.toString();
+        isBuffering = false;
       });
     }
   }
 
-  void _switchTo(Channel channel) {
-    if (channel.url == _currentChannel.url) return;
+  void _switchChannel(Channel channel) {
+    if (channel.url == currentChannel.url) return;
 
-    _chewieController?.pause();
-    _chewieController?.dispose();
-    _videoController.dispose();
+    chewieController?.pause();
+    chewieController?.dispose();
+    videoController.dispose();
 
-    _currentChannel = channel;
-    _initializePlayer();
+    currentChannel = channel;
+    _initPlayer();
   }
 
   @override
   void dispose() {
-    _chewieController?.dispose();
-    _videoController.dispose();
+    chewieController?.dispose();
+    videoController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_currentChannel.name)),
+      appBar: AppBar(title: Text(currentChannel.name)),
       body: Column(
         children: [
           Expanded(
             flex: 5,
-            child: _isBuffering
+            child: isBuffering
                 ? const Center(child: CircularProgressIndicator())
-                : _playerError != null
+                : playerError != null
                     ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             const Icon(Icons.error, color: Colors.red, size: 60),
                             const SizedBox(height: 16),
-                            Text('Stream error\n$_playerError', textAlign: TextAlign.center),
+                            Text('ভিডিও চালানো যায়নি\n$playerError', textAlign: TextAlign.center),
                             const SizedBox(height: 24),
                             ElevatedButton(
-                              onPressed: _initializePlayer,
-                              child: const Text('Retry'),
+                              onPressed: _initPlayer,
+                              child: const Text('আবার চেষ্টা করুন'),
                             ),
                           ],
                         ),
                       )
-                    : Chewie(controller: _chewieController!),
+                    : Chewie(controller: chewieController!),
           ),
           Expanded(
             flex: 3,
@@ -659,16 +541,16 @@ class _PlayerPageState extends State<PlayerPage> {
               itemCount: widget.groupChannels.length,
               itemBuilder: (context, index) {
                 final ch = widget.groupChannels[index];
-                final isPlaying = ch.url == _currentChannel.url;
+                final isActive = ch.url == currentChannel.url;
 
                 return ListTile(
-                  selected: isPlaying,
+                  selected: isActive,
                   selectedTileColor: Colors.blueGrey[900],
                   leading: ch.logo.isNotEmpty
                       ? Image.network(ch.logo, width: 40, errorBuilder: (_, __, ___) => const Icon(Icons.tv))
                       : const Icon(Icons.tv),
                   title: Text(ch.name),
-                  onTap: () => _switchTo(ch),
+                  onTap: () => _switchChannel(ch),
                 );
               },
             ),
@@ -679,13 +561,12 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 }
 
-// Info Page
 class InfoPage extends StatelessWidget {
   final ServerConfig? config;
 
   const InfoPage({super.key, this.config});
 
-  Future<void> _launchUrl(String url) async {
+  Future<void> _openUrl(String url) async {
     if (url.isEmpty) return;
     final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
@@ -701,26 +582,26 @@ class InfoPage extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         children: [
           Text(
-            '${config?.name ?? appName}  •  v${config?.version ?? '1.0.0'}',
-            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+            '${config?.name ?? appName} • v${config?.version ?? '1.0.0'}',
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 32),
 
           const Text('What’s New', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
-          Text(config?.updateDescription ?? 'Latest improvements and fixes'),
+          Text(config?.updateDescription ?? 'Latest fixes & improvements'),
 
           const SizedBox(height: 32),
           if (config?.apkDownload.isNotEmpty == true)
             OutlinedButton.icon(
-              onPressed: () => _launchUrl(config!.apkDownload),
+              onPressed: () => _openUrl(config!.apkDownload),
               icon: const Icon(Icons.android),
               label: const Text('Download APK'),
             ),
           const SizedBox(height: 12),
           if (config?.webDownload.isNotEmpty == true)
             OutlinedButton.icon(
-              onPressed: () => _launchUrl(config!.webDownload),
+              onPressed: () => _openUrl(config!.webDownload),
               icon: const Icon(Icons.web),
               label: const Text('Web Version'),
             ),
@@ -728,25 +609,25 @@ class InfoPage extends StatelessWidget {
           const SizedBox(height: 40),
           const Text('Disclaimer', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
-          Text(config?.disclaimer ?? 'All content belongs to their respective owners. We only provide links.'),
+          Text(config?.disclaimer ?? 'All streams belong to their respective owners.'),
 
           const SizedBox(height: 40),
-          const Text('Contact Us', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+          const Text('Contact', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
           const SizedBox(height: 12),
           OutlinedButton.icon(
-            onPressed: () => _launchUrl(config?.telegramUser ?? ''),
+            onPressed: () => _openUrl(config?.telegramUser ?? ''),
             icon: const Icon(Icons.telegram),
             label: const Text('Telegram Personal'),
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
-            onPressed: () => _launchUrl(config?.telegramGroup ?? ''),
+            onPressed: () => _openUrl(config?.telegramGroup ?? ''),
             icon: const Icon(Icons.group),
             label: const Text('Telegram Group'),
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
-            onPressed: () => _launchUrl(config?.website ?? ''),
+            onPressed: () => _openUrl(config?.website ?? ''),
             icon: const Icon(Icons.language),
             label: const Text('Website'),
           ),
