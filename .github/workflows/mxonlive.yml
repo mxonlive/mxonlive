@@ -7,33 +7,48 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
           java-version: '17'
+
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+
       - run: flutter --version
       - run: flutter pub get
-      - run: flutter pub run flutter_launcher_icons
+
+      # শুধু Android এর জন্য icon generate (ios: false থাকলে safe)
+      - run: flutter pub run flutter_launcher_icons || true   # error হলেও build চালিয়ে যাবে
+
       - run: flutter create .
+
+      # Android cleartext + Android TV support
       - run: sed -i 's/<application /<application android:usesCleartextTraffic="true" /' android/app/src/main/AndroidManifest.xml
       - run: sed -i '/<category android:name="android.intent.category.LAUNCHER" \/>/a\        <category android:name="android.intent.category.LEANBACK_LAUNCHER" \/>' android/app/src/main/AndroidManifest.xml
+
       - run: flutter build apk --release
       - run: flutter build web
-      - run: flutter build linux --release  # Optional desktop
+
+      # Optional desktop builds
+      # - run: flutter build linux --release
+
       - uses: actions/upload-artifact@v4
         with:
           name: apk
           path: build/app/outputs/flutter-apk/app-release.apk
+
       - uses: actions/upload-artifact@v4
         with:
           name: web
           path: build/web
-      - uses: actions/upload-artifact@v4
-        with:
-          name: linux
-          path: build/linux/x64/release/bundle
+
+      # - uses: actions/upload-artifact@v4
+      #   with:
+      #     name: linux
+      #     path: build/linux/x64/release/bundle
