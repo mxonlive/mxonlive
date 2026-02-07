@@ -59,22 +59,22 @@ class ServerConfig {
 
   factory ServerConfig.fromJson(Map<String, dynamic> json) {
     return ServerConfig(
-      name: json['app']['name'] ?? appName,
-      version: json['app']['version'] ?? '1.0.0',
-      welcomeMessage: json['app']['welcome_message'] ?? 'Welcome to mxonlive',
-      notification: json['app']['notification'] ?? '',
-      m3uUrl: json['app']['m3u_url'] ?? defaultM3uUrl,
-      updateTitle: json['updates']['title'] ?? "What's New",
-      updateDescription: json['updates']['description'] ?? '',
-      apkDownload: json['downloads']['apk'] ?? '',
-      webDownload: json['downloads']['web'] ?? '',
-      disclaimer: json['legal']['disclaimer'] ?? '',
-      creditsPlatform: json['credits']['platform'] ?? '',
-      telegramUser: json['contact']['telegram_user'] ?? '',
-      telegramGroup: json['contact']['telegram_group'] ?? '',
-      website: json['contact']['website'] ?? '',
-      welcomeEnabled: json['features']['welcome_enabled'] ?? true,
-      notificationEnabled: json['features']['notification_enabled'] ?? true,
+      name: json['app']['name'] as String? ?? appName,
+      version: json['app']['version'] as String? ?? '1.0.0',
+      welcomeMessage: json['app']['welcome_message'] as String? ?? 'Welcome to mxonlive',
+      notification: json['app']['notification'] as String? ?? '',
+      m3uUrl: json['app']['m3u_url'] as String? ?? defaultM3uUrl,
+      updateTitle: json['updates']['title'] as String? ?? "What's New",
+      updateDescription: json['updates']['description'] as String? ?? '',
+      apkDownload: json['downloads']['apk'] as String? ?? '',
+      webDownload: json['downloads']['web'] as String? ?? '',
+      disclaimer: json['legal']['disclaimer'] as String? ?? '',
+      creditsPlatform: json['credits']['platform'] as String? ?? '',
+      telegramUser: json['contact']['telegram_user'] as String? ?? '',
+      telegramGroup: json['contact']['telegram_group'] as String? ?? '',
+      website: json['contact']['website'] as String? ?? '',
+      welcomeEnabled: json['features']['welcome_enabled'] as bool? ?? true,
+      notificationEnabled: json['features']['notification_enabled'] as bool? ?? true,
     );
   }
 
@@ -130,17 +130,17 @@ class ApiService {
     try {
       final response = await http.get(Uri.parse(configUrl)).timeout(timeoutDuration);
       if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
         final config = ServerConfig.fromJson(json);
-        _cacheConfig(config);
+        await _cacheConfig(config);
         return config;
       } else {
-        throw Exception('Failed to load config: ${response.statusCode}');
+        throw Exception('Server returned ${response.statusCode}');
       }
     } catch (e) {
       final cached = await _getCachedConfig();
       if (cached != null) return cached;
-      throw Exception('No internet and no cache: $e');
+      rethrow;
     }
   }
 
@@ -148,15 +148,15 @@ class ApiService {
     try {
       final response = await http.get(Uri.parse(m3uUrl)).timeout(timeoutDuration);
       if (response.statusCode == 200) {
-        _cachePlaylist(response.body);
+        await _cachePlaylist(response.body);
         return response.body;
       } else {
-        throw Exception('Failed to load playlist: ${response.statusCode}');
+        throw Exception('Playlist fetch failed: ${response.statusCode}');
       }
     } catch (e) {
       final cached = await _getCachedPlaylist();
       if (cached != null) return cached;
-      throw Exception('No internet and no cache: $e');
+      rethrow;
     }
   }
 
@@ -168,8 +168,12 @@ class ApiService {
   static Future<ServerConfig?> _getCachedConfig() async {
     final prefs = await SharedPreferences.getInstance();
     final jsonStr = prefs.getString(cacheConfigKey);
-    if (jsonStr != null) {
-      return ServerConfig.fromJson(jsonDecode(jsonStr));
+    if (jsonStr != null && jsonStr.isNotEmpty) {
+      try {
+        return ServerConfig.fromJson(jsonDecode(jsonStr));
+      } catch (_) {
+        return null;
+      }
     }
     return null;
   }
@@ -189,36 +193,58 @@ class PlaylistService {
   static List<Channel> parseM3u(String m3uContent) {
     final lines = m3uContent.split('\n');
     final channels = <Channel>[];
-    String? name, logo, groupTitle, url;
 
-    for (var line in lines) {
-      line = line.trim();
-      if (line.startsWith('#EXTINF:')) {
-        final parts = line.substring(8).split(',');
-        name = parts.length > 1 ? parts[1] : 'Unknown';
-        logo = _extractAttribute(line, 'tvg-logo');
-        groupTitle = _extractAttribute(line, 'group-title') ?? 'Uncategorized';
-      } else if (line.isNotEmpty && !line.startsWith('#')) {
-        url = line;
-        if (name != null && url != null) {
-          channels.add(Channel(name: name, logo: logo ?? '', groupTitle: groupTitle, url: url));
-          name = url = logo = groupTitle = null;
+    String? currentName;
+    String? currentLogo;
+    String? currentGroup;
+    String? currentUrl;
+
+    for (final line in lines) {
+      final trimmed = line.trim();
+
+      if (trimmed.startsWith('#EXTINF:')) {
+        // Parse attributes
+        final regex = RegExp(r'tvg-logo="([^"]*)"|group-title="([^"]*)"');
+        final matches = regex.allMatches(trimmed);
+
+        currentLogo = matches
+            .map((m) => m.group(1))
+            .firstWhere((v) => v != null, orElse: () => null);
+
+        currentGroup = matches
+            .map((m) => m.group(2))
+            .firstWhere((v) => v != null, orElse: () => null);
+
+        // Name is after the last comma
+        final namePart = trimmed.split(',').last.trim();
+        currentName = namePart.isNotEmpty ? namePart : 'Unknown Channel';
+      } else if (trimmed.isNotEmpty && !trimmed.startsWith('#')) {
+        currentUrl = trimmed;
+
+        // Only add if we have name and valid url
+        if (currentName != null && currentUrl.isNotEmpty) {
+          channels.add(Channel(
+            name: currentName,
+            logo: currentLogo ?? '',
+            groupTitle: currentGroup ?? 'Uncategorized',
+            url: currentUrl,
+          ));
         }
+
+        // Reset for next channel
+        currentName = null;
+        currentLogo = null;
+        currentGroup = null;
+        currentUrl = null;
       }
     }
-    return channels;
-  }
 
-  static String? _extractAttribute(String line, String attr) {
-    final regex = RegExp('$attr="([^"]*)"');
-    final match = regex.firstMatch(line);
-    return match?.group(1);
+    return channels;
   }
 }
 
-// UI Widgets
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+// UI
+void main() {
   runApp(const MyApp());
 }
 
@@ -229,9 +255,9 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: appName,
-      theme: ThemeData.dark(),  // Dark mode support
-      home: const HomePage(),
+      theme: ThemeData.dark(useMaterial3: true),
       debugShowCheckedModeBanner: false,
+      home: const HomePage(),
     );
   }
 }
@@ -244,42 +270,63 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  ServerConfig? config;
-  List<Channel> channels = [];
-  List<Channel> filteredChannels = [];
-  bool isLoading = true;
-  String errorMessage = '';
-  TextEditingController searchController = TextEditingController();
+  ServerConfig? _config;
+  List<Channel> _channels = [];
+  List<Channel> _filteredChannels = [];
+  bool _isLoading = true;
+  String _errorMessage = '';
+  final _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _loadData();
-    searchController.addListener(_filterChannels);
+    _loadEverything();
+    _searchController.addListener(_onSearchChanged);
   }
 
-  Future<void> _loadData() async {
-    setState(() => isLoading = true);
+  Future<void> _loadEverything() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
+
     try {
-      config = await ApiService.fetchConfig();
-      final playlist = await ApiService.fetchPlaylist(config!.m3uUrl);
-      channels = PlaylistService.parseM3u(playlist);
-      filteredChannels = channels;
-      errorMessage = '';
+      final config = await ApiService.fetchConfig();
+      final playlistText = await ApiService.fetchPlaylist(config.m3uUrl);
+      final parsedChannels = PlaylistService.parseM3u(playlistText);
+
+      setState(() {
+        _config = config;
+        _channels = parsedChannels;
+        _filteredChannels = parsedChannels;
+        _isLoading = false;
+      });
     } catch (e) {
-      errorMessage = e.toString();
-    } finally {
-      setState(() => isLoading = false);
+      setState(() {
+        _errorMessage = e.toString().replaceAll('Exception: ', '');
+        _isLoading = false;
+      });
     }
   }
 
-  void _filterChannels() {
-    final query = searchController.text.toLowerCase();
+  void _onSearchChanged() {
+    final query = _searchController.text.toLowerCase().trim();
     setState(() {
-      filteredChannels = channels.where((ch) {
-        return ch.name.toLowerCase().contains(query) || ch.groupTitle.toLowerCase().contains(query);
-      }).toList();
+      if (query.isEmpty) {
+        _filteredChannels = _channels;
+      } else {
+        _filteredChannels = _channels.where((ch) {
+          return ch.name.toLowerCase().contains(query) ||
+              ch.groupTitle.toLowerCase().contains(query);
+        }).toList();
+      }
     });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -290,124 +337,218 @@ class _HomePageState extends State<HomePage> {
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.info_outline),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => InfoPage(config: config))),
+            icon: const Icon(Icons.info),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => InfoPage(config: _config),
+                ),
+              );
+            },
           ),
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _loadData,
-        child: isLoading
-            ? _buildSkeleton()
-            : errorMessage.isNotEmpty
-                ? _buildError(errorMessage)
-                : SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        if (config != null && config!.welcomeEnabled) ...[
-                          Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Text(config!.welcomeMessage, style: const TextStyle(fontSize: 18)),
-                          ),
-                        ],
-                        if (config != null && config!.notificationEnabled && config!.notification.isNotEmpty) ...[
-                          _buildNotificationCapsule(config!.notification),
-                        ],
-                        Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: TextField(
-                            controller: searchController,
-                            decoration: const InputDecoration(
-                              labelText: 'Search channels',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                        filteredChannels.isEmpty
-                            ? const Center(child: Text('No channels found'))
-                            : GridView.builder(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 4,
-                                  childAspectRatio: 1.5,
-                                ),
-                                itemCount: filteredChannels.length,
-                                itemBuilder: (ctx, idx) {
-                                  final ch = filteredChannels[idx];
-                                  return GestureDetector(
-                                    onTap: () => Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => PlayerPage(
-                                          channel: ch,
-                                          groupChannels: channels.where((c) => c.groupTitle == ch.groupTitle).toList(),
-                                        ),
-                                      ),
-                                    ),
-                                    child: Card(
-                                      child: Column(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          ch.logo.isNotEmpty
-                                              ? Image.network(ch.logo, height: 50, errorBuilder: (_, __, ___) => const Icon(Icons.tv))
-                                              : const Icon(Icons.tv),
-                                          Text(ch.name, textAlign: TextAlign.center),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                      ],
-                    ),
-                  ),
+        onRefresh: _loadEverything,
+        child: _isLoading
+            ? _buildLoading()
+            : _errorMessage.isNotEmpty
+                ? _buildError()
+                : _buildContent(),
       ),
     );
   }
 
-  Widget _buildSkeleton() {
+  Widget _buildLoading() {
     return Shimmer.fromColors(
-      baseColor: Colors.grey[300]!,
-      highlightColor: Colors.grey[100]!,
+      baseColor: Colors.grey[850]!,
+      highlightColor: Colors.grey[700]!,
       child: GridView.builder(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, childAspectRatio: 1.5),
+        padding: const EdgeInsets.all(12),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 4,
+          childAspectRatio: 0.8,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
         itemCount: 20,
-        itemBuilder: (_, __) => Container(color: Colors.white),
+        itemBuilder: (_, __) => Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildError(String msg) {
+  Widget _buildError() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(msg),
-          ElevatedButton(onPressed: _loadData, child: const Text('Retry')),
+          Icon(Icons.error_outline, size: 64, color: Colors.red[400]),
+          const SizedBox(height: 16),
+          Text(
+            'Something went wrong',
+            style: TextStyle(fontSize: 20, color: Colors.red[300]),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              _errorMessage,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.grey),
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: _loadEverything,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Try Again'),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildNotificationCapsule(String text) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(color: Colors.blue[800], borderRadius: BorderRadius.circular(20)),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Text(text, style: const TextStyle(color: Colors.white)),
-      ),
+  Widget _buildContent() {
+    return CustomScrollView(
+      slivers: [
+        if (_config != null && _config!.welcomeEnabled)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                _config!.welcomeMessage,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+
+        if (_config != null && _config!.notificationEnabled && _config!.notification.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.blue[800],
+                borderRadius: BorderRadius.circular(30),
+              ),
+              child: Text(
+                _config!.notification,
+                style: const TextStyle(color: Colors.white),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          sliver: SliverToBoxAdapter(
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                labelText: 'Search channels...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                filled: true,
+                fillColor: Colors.grey[850],
+              ),
+            ),
+          ),
+        ),
+
+        if (_filteredChannels.isEmpty)
+          const SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Text(
+                'No channels found',
+                style: TextStyle(fontSize: 18, color: Colors.grey),
+              ),
+            ),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.all(12),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                childAspectRatio: 0.8,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final channel = _filteredChannels[index];
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PlayerPage(
+                            initialChannel: channel,
+                            sameGroupChannels: _channels
+                                .where((c) => c.groupTitle == channel.groupTitle)
+                                .toList(),
+                          ),
+                        ),
+                      );
+                    },
+                    child: Card(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: channel.logo.isNotEmpty
+                                ? Image.network(
+                                    channel.logo,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) => const Icon(Icons.tv, size: 48),
+                                  )
+                                : const Icon(Icons.tv, size: 48),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: Text(
+                              channel.name,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+                childCount: _filteredChannels.length,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
 
 class PlayerPage extends StatefulWidget {
-  final Channel channel;
-  final List<Channel> groupChannels;
+  final Channel initialChannel;
+  final List<Channel> sameGroupChannels;
 
-  const PlayerPage({super.key, required this.channel, required this.groupChannels});
+  const PlayerPage({
+    super.key,
+    required this.initialChannel,
+    required this.sameGroupChannels,
+  });
 
   @override
   State<PlayerPage> createState() => _PlayerPageState();
@@ -416,43 +557,65 @@ class PlayerPage extends StatefulWidget {
 class _PlayerPageState extends State<PlayerPage> {
   late VideoPlayerController _videoController;
   ChewieController? _chewieController;
-  bool isLoading = true;
-  String errorMessage = '';
-  Channel? currentChannel;
+  late Channel _currentChannel;
+  bool _isLoading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    currentChannel = widget.channel;
-    _initPlayer();
+    _currentChannel = widget.initialChannel;
+    _initializePlayer();
   }
 
-  Future<void> _initPlayer() async {
-    setState(() => isLoading = true);
+  Future<void> _initializePlayer() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
     try {
-      _videoController = VideoPlayerController.networkUrl(Uri.parse(currentChannel!.url));
+      _videoController = VideoPlayerController.networkUrl(
+        Uri.parse(_currentChannel.url),
+      );
+
       await _videoController.initialize();
+
       _chewieController = ChewieController(
         videoPlayerController: _videoController,
         autoPlay: true,
         looping: false,
-        fullScreenByDefault: false,
-        errorBuilder: (context, error) => Center(child: Text('Error: $error')),
+        allowFullScreen: true,
+        allowMuting: true,
+        showControlsOnInitialize: true,
+        errorBuilder: (context, errorMessage) {
+          return Center(
+            child: Text(
+              errorMessage,
+              style: const TextStyle(color: Colors.white),
+            ),
+          );
+        },
       );
-      errorMessage = '';
+
+      setState(() => _isLoading = false);
     } catch (e) {
-      errorMessage = e.toString();
-    } finally {
-      setState(() => isLoading = false);
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
     }
   }
 
-  void _switchChannel(Channel newChannel) {
-    if (currentChannel == newChannel) return;
+  void _playNewChannel(Channel channel) {
+    if (_currentChannel.url == channel.url) return;
+
+    _chewieController?.pause();
     _chewieController?.dispose();
     _videoController.dispose();
-    currentChannel = newChannel;
-    _initPlayer();
+
+    _currentChannel = channel;
+    _initializePlayer();
   }
 
   @override
@@ -464,49 +627,54 @@ class _PlayerPageState extends State<PlayerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return OrientationBuilder(
-      builder: (context, orientation) {
-        return Scaffold(
-          appBar: AppBar(title: Text(currentChannel!.name)),
-          body: Column(
-            children: [
-              Expanded(
-                flex: orientation == Orientation.portrait ? 3 : 6,
-                child: isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : errorMessage.isNotEmpty
-                        ? _buildError(errorMessage)
-                        : Chewie(controller: _chewieController!),
-              ),
-              Expanded(
-                flex: orientation == Orientation.portrait ? 2 : 1,
-                child: ListView.builder(
-                  itemCount: widget.groupChannels.length,
-                  itemBuilder: (ctx, idx) {
-                    final ch = widget.groupChannels[idx];
-                    return ListTile(
-                      title: Text(ch.name),
-                      leading: ch.logo.isNotEmpty ? Image.network(ch.logo, width: 30) : const Icon(Icons.tv),
-                      selected: ch == currentChannel,
-                      onTap: () => _switchChannel(ch),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildError(String msg) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_currentChannel.name),
+        centerTitle: true,
+      ),
+      body: Column(
         children: [
-          Text(msg),
-          ElevatedButton(onPressed: _initPlayer, child: const Text('Retry')),
+          Expanded(
+            flex: 5,
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text('Error: $_error'),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: _initializePlayer,
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : Chewie(controller: _chewieController!),
+          ),
+
+          Expanded(
+            flex: 3,
+            child: ListView.builder(
+              itemCount: widget.sameGroupChannels.length,
+              itemBuilder: (context, index) {
+                final ch = widget.sameGroupChannels[index];
+                final isActive = ch.url == _currentChannel.url;
+
+                return ListTile(
+                  selected: isActive,
+                  selectedTileColor: Colors.blue[900],
+                  leading: ch.logo.isNotEmpty
+                      ? Image.network(ch.logo, width: 40, errorBuilder: (_, __, ___) => const Icon(Icons.tv))
+                      : const Icon(Icons.tv),
+                  title: Text(ch.name),
+                  onTap: () => _playNewChannel(ch),
+                );
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -518,55 +686,90 @@ class InfoPage extends StatelessWidget {
 
   const InfoPage({super.key, this.config});
 
-  Future<void> _launchUrl(String url) async {
+  Future<void> _launch(String url) async {
     final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    } else {
-      // Handle error
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Info')),
-      body: config == null
-          ? const Center(child: Text('No config loaded'))
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                Text('${config!.name} v${config!.version}', style: const TextStyle(fontSize: 20)),
-                const SizedBox(height: 16),
-                Text(config!.updateTitle, style: const TextStyle(fontWeight: FontWeight.bold)),
-                Text(config!.updateDescription),
-                const SizedBox(height: 16),
-                ElevatedButton(onPressed: () => _launchUrl(config!.apkDownload), child: const Text('Download APK')),
-                ElevatedButton(onPressed: () => _launchUrl(config!.webDownload), child: const Text('Open Web')),
-                const SizedBox(height: 16),
-                Text('Disclaimer: ${config!.disclaimer}'),
-                const SizedBox(height: 16),
-                Text('Credits: ${config!.creditsPlatform}'),
-                const SizedBox(height: 16),
-                ElevatedButton(onPressed: () => _launchUrl(config!.telegramUser), child: const Text('Telegram Personal')),
-                ElevatedButton(onPressed: () => _launchUrl(config!.telegramGroup), child: const Text('Telegram Group')),
-                ElevatedButton(onPressed: () => _launchUrl(config!.website), child: const Text('Website')),
-                const SizedBox(height: 32),
-                const Text('Web Developer: Sultan Muhammad A\'rabi', textAlign: TextAlign.center),
-              ],
+      appBar: AppBar(title: const Text('About mxonlive')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          if (config != null) ...[
+            Text(
+              '${config!.name} • v${config!.version}',
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
+            const SizedBox(height: 24),
+
+            const Text('What\'s New', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Text(config!.updateDescription.isEmpty ? 'Latest improvements' : config!.updateDescription),
+
+            const SizedBox(height: 24),
+            const Text('Downloads', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            if (config!.apkDownload.isNotEmpty)
+              OutlinedButton.icon(
+                onPressed: () => _launch(config!.apkDownload),
+                icon: const Icon(Icons.android),
+                label: const Text('Download APK'),
+              ),
+            const SizedBox(height: 12),
+            if (config!.webDownload.isNotEmpty)
+              OutlinedButton.icon(
+                onPressed: () => _launch(config!.webDownload),
+                icon: const Icon(Icons.language),
+                label: const Text('Open Web Version'),
+              ),
+
+            const SizedBox(height: 32),
+            const Text('Legal', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Text(config!.disclaimer),
+
+            const SizedBox(height: 32),
+            const Text('Contact', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            if (config!.telegramUser.isNotEmpty)
+              OutlinedButton.icon(
+                onPressed: () => _launch(config!.telegramUser),
+                icon: const Icon(Icons.telegram),
+                label: const Text('Telegram (Personal)'),
+              ),
+            const SizedBox(height: 12),
+            if (config!.telegramGroup.isNotEmpty)
+              OutlinedButton.icon(
+                onPressed: () => _launch(config!.telegramGroup),
+                icon: const Icon(Icons.group),
+                label: const Text('Telegram Group'),
+              ),
+            const SizedBox(height: 12),
+            if (config!.website.isNotEmpty)
+              OutlinedButton.icon(
+                onPressed: () => _launch(config!.website),
+                icon: const Icon(Icons.web),
+                label: const Text('Website'),
+              ),
+
+            const SizedBox(height: 48),
+            const Center(
+              child: Text(
+                'Web Developer: Sultan Muhammad A\'rabi',
+                style: TextStyle(color: Colors.grey, fontSize: 14),
+              ),
+            ),
+            const SizedBox(height: 32),
+          ] else ...[
+            const Center(child: Text('No configuration loaded yet')),
+          ],
+        ],
+      ),
     );
   }
-}
-
-// Error Handling Helpers
-void showSnackbar(BuildContext context, String message) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-}
-
-void showErrorDialog(BuildContext context, String title, String content) {
-  showDialog(
-    context: context,
-    builder: (_) => AlertDialog(title: Text(title), content: Text(content), actions: [TextButton(onPressed: () => Navigator.pop(_), child: const Text('OK'))]),
-  );
 }
