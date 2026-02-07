@@ -1,4 +1,4 @@
-name: Auto-Build mxonlive v5.0
+name: Auto-Build mxonlive v6.0
 
 on: [push, workflow_dispatch]
 
@@ -16,29 +16,25 @@ jobs:
         with:
           channel: 'stable'
 
-      # 🔥 STEP 1: PURGE OLD DATA & REGENERATE 🔥
-      - name: Fresh Project Generation
+      # 🔥 STEP 1: FRESH START 🔥
+      - name: Generate New Project
         run: |
-          echo "Deleting old Android/iOS folders..."
+          echo "Wiping old files..."
           rm -rf android ios build
-          echo "Creating new mxonlive project..."
+          echo "Generating mxonlive..."
           flutter create . --org com.mxonlive.tv --project-name mxonlive
 
-      # 🔥 STEP 2: INJECT PERMISSIONS & TRAFFIC RULES 🔥
-      - name: Configure Manifest & Gradle
+      # 🔥 STEP 2: PERMISSIONS & CLEARTEXT (Crucial for HTTP streams) 🔥
+      - name: Inject Config
         run: |
-          echo "Injecting Internet & Cleartext Traffic permissions..."
-          
-          # AndroidManifest.xml: Add Permissions + usesCleartextTraffic
+          # Inject Permissions + usesCleartextTraffic="true"
           sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.WAKE_LOCK"\/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>\n    <application android:usesCleartextTraffic="true"/g' android/app/src/main/AndroidManifest.xml
           
-          # build.gradle.kts: Set MinSDK to 21
+          # Fix MinSDK
           sed -i 's/flutter.minSdkVersion/21/g' android/app/build.gradle.kts
 
-          echo "Configuration Complete."
-
-      # 🔥 STEP 3: BUILD APK 🔥
-      - name: Generate Icons & Build
+      # 🔥 STEP 3: BUILD 🔥
+      - name: Build APKs
         run: |
           if [ ! -f assets/logo.png ]; then mkdir -p assets; curl -L -o assets/logo.png "https://cdn-icons-png.flaticon.com/512/3163/3163478.png"; fi
           flutter pub get
@@ -48,5 +44,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: mxonlive-v5.0-bundle
+          name: mxonlive-v6.0-bundle
           path: build/app/outputs/flutter-apk/*.apk
