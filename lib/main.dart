@@ -13,7 +13,7 @@ import 'package:video_player/video_player.dart';
 // ──────────────────────────────────────────────
 
 const String appName = 'mxonlive';
-const String configUrl = 'https://mxonlive.github.io/live/mxonlive_config.json';
+const String configUrl = 'https://xown.site/webmini/mxonlive_apk_playlists/mxonlive_config.json';
 const String defaultM3uUrl = 'https://private-zone-by-xfireflix.pages.dev/playlist-isp-bdix.m3u';
 
 const Duration requestTimeout = Duration(seconds: 20);
